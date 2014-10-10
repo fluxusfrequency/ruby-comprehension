@@ -12,13 +12,10 @@ class Comprehension
   end
 
   def comprehend
-    if !has_conditional?
-      return collection if basic?
-      eval(method_loop(collection))
+    if basic?
+      BasicComprehension.new(comprehension, scope).comprehend
     else
-      result = eval(conditional_loop)
-      return result if basic?
-      eval(method_loop(result))
+      MethodComprehension.new(comprehension, scope).comprehend
     end
   end
 
@@ -30,9 +27,6 @@ class Comprehension
     parts[0] == parts[2]
   end
 
-  def has_conditional?
-    !!comprehension.match(/(if|unless)/)
-  end
 
   def parts
     @parts ||= comprehension.split(' ')
@@ -43,39 +37,69 @@ class Comprehension
       i = parts.index(conditional)
       scope.send(:eval, parts[i - 1])
     else
-      result = comprehension.scan(/\[.*\]/).last
-      if result
-        return eval(result)
-      else
-        scope.send(:eval, parts.last)
-      end
+      result = comprehension.slice(/\[.*\]/)
+      return eval(result) if result
+      scope.send(:eval, parts.last)
     end
-  end
-
-  def method_loop(coll)
-    "#{coll}.map { |x| scope.send(method, x) }"
   end
 
   def conditional_loop
     if conditional == 'if'
-      "#{collection}.select { |x| x.send(condition) }"
+      collection.select { |x| x.send(condition) }
     else
-      "#{collection}.reject { |x| x.send(condition) }"
+      collection.reject { |x| x.send(condition) }
     end
   end
 
-  def method
-    # only occurs if not basic
-    parts[0]
+  def conditional
+    comprehension.slice(/(if|unless)/)
   end
 
-  def conditional
-    comprehension.match(/(if|unless)/)[0]
+  def has_conditional?
+    !!conditional
   end
 
   def condition
     i = parts.index(conditional)
-    parts[i + 1].split('.')[1]
+    parts[i + 1].split('.').last
   end
 
+end
+
+class BasicComprehension < Comprehension
+  def initialize(comprehension, scope)
+    @comprehension = comprehension
+    @scope = scope
+  end
+
+  def comprehend
+    if has_conditional?
+      conditional_loop
+    else
+      collection
+    end
+  end
+end
+
+class MethodComprehension < Comprehension
+  def initialize(comprehension, scope)
+    @comprehension = comprehension
+    @scope = scope
+  end
+
+  def comprehend
+    if has_conditional?
+      method_loop(conditional_loop)
+    else
+      method_loop(collection)
+    end
+  end
+
+  def method_loop(coll)
+    coll.map { |x| scope.send(method, x) }
+  end
+
+  def method
+    parts.first
+  end
 end
