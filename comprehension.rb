@@ -1,6 +1,8 @@
-module ListComprehension
+module Kernel
   def c(&block)
-    raise ArgumentError.new('You must supply a block with a string in it') unless block_given?
+    unless block_given?
+      raise ArgumentError.new('You must supply a block with a string in it')
+    end
     Comprehension.new(&block).comprehend
   end
 end
@@ -12,19 +14,27 @@ class Comprehension
   end
 
   def comprehend
-    if !has_conditional?
-      return collection if basic?
-      eval(method_loop(collection))
+    if has_conditional?
+      comprehend_with_conditional
+    elsif basic?
+      collection
     else
-      result = eval(conditional_loop)
-      return result if basic?
-      eval(method_loop(result))
+      eval(method_loop(collection))
     end
   end
 
   private
 
   attr_reader :comprehension, :scope
+
+  def comprehend_with_conditional
+    result = eval(conditional_loop)
+    if basic?
+      result
+    else
+      eval(method_loop(result))
+    end
+  end
 
   def basic?
     parts[0] == parts[2]
@@ -35,20 +45,28 @@ class Comprehension
   end
 
   def parts
-    @parts ||= comprehension.split(' ')
+    comprehension.split(' ')
   end
 
   def collection
     if has_conditional?
-      i = parts.index(conditional)
-      scope.send(:eval, parts[i - 1])
+      conditional_collection
     else
-      result = comprehension.scan(/\[.*\]/).last
-      if result
-        return eval(result)
-      else
-        scope.send(:eval, parts.last)
-      end
+      bare_collection
+    end
+  end
+
+  def conditional_collection
+    i = parts.index(conditional)
+    scope.send(:eval, parts[i - 1])
+  end
+
+  def bare_collection
+    result = comprehension.scan(/\[.*\]/).last
+    if result
+      eval(result)
+    else
+      scope.send(:eval, parts.last)
     end
   end
 
@@ -65,16 +83,17 @@ class Comprehension
   end
 
   def method
-    # only occurs if not basic
     parts[0]
   end
 
   def conditional
-    comprehension.match(/(if|unless)/)[0]
+    comprehension[/if/] || comprehension[/unless/]
   end
 
   def condition
     i = parts.index(conditional)
+    # This implementation works for method calls like n.odd?,
+    # but not things like `!n`
     parts[i + 1].split('.')[1]
   end
 
